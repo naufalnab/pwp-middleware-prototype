@@ -5,6 +5,7 @@ Prototype **frontend statis** untuk presentasi konsep integrasi penimbangan Vend
 ## Cara menjalankan
 
 1. Buka `index.html` langsung di Chrome / Safari; **tidak ada instalasi atau server yang diperlukan**.
+   Tampilan awal menggunakan **dark mode**; gunakan tombol **☀ Mode terang / ☾ Mode gelap** di header untuk berganti tema. Pilihan tema disimpan di browser jika penyimpanan lokal tersedia.
 2. Klik **Simulasi transaksi** lalu pilih salah satu skenario: Normal, Duplikat, Selisih Berat, atau Odoo Unavailable.
 3. Klik **Kirim ke Middleware** → **Jalankan validasi** → konfirmasi **Vendor ABC** dan **PWP** → **Integrasi Odoo** → **Kirim ke Odoo (demo)**.
 4. Skenario **Odoo unavailable**: klik **Retry** setelah pengiriman gagal; hasil simulasi akan pulih.
