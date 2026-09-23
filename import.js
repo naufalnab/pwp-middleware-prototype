@@ -5,22 +5,23 @@ const IMPORT_FIELDS = [
   'reference','vendor','date','lot','gross_kg','tare_kg',
   'pet_kg','pet_price_idr','hdpe_kg','hdpe_price_idr','residu_kg'
 ];
+const IMPORT_HEADERS=[IMPORT_FIELDS,[...IMPORT_FIELDS,'image_base64'],[...IMPORT_FIELDS,...IMAGE_HEADERS]];
 const IMPORT_LIMIT = 1000;
 const IMPORT_FILE_LIMIT = 5 * 1024 * 1024;
 const importEmpty = () => ({filename:'',parsed:null,analysis:null,loadError:'',busy:false,success:''});
 
-function importSampleRows(withError=false){
-  return [
-    IMPORT_FIELDS,
-    ['VABC-IMP-001','PT Mitra Sampel','2026-09-23','LOT-IMP-001','18600','8200','6500','5000','3200','2500','700'],
-    ['VABC-IMP-002','PT Mitra Sampel','2026-09-23','LOT-IMP-002','9000','4000','3000','5000','1800','2500',withError?'100':'200']
-  ];
+function importSampleRows(withError=false,withImage=false,withBadImage=false){
+ return [[...IMPORT_FIELDS,...IMAGE_HEADERS],
+ ['VABC-IMP-001','PT Mitra Sampel','2026-09-23','LOT-IMP-001','18600','8200','6500','5000','3200','2500','700',
+   withImage?'bukti-demo.png':'',withImage?'data:image/png;base64,'+IMAGE_DEMO_PNG:''],
+ ['VABC-IMP-002','PT Mitra Sampel','2026-09-23','LOT-IMP-002','9000','4000','3000','5000','1800','2500',withError?'100':'200',withBadImage?'foto-rusak.png':'',withBadImage?'bukan-base64@@':'']];
 }
 function csvQuoted(value){return '"'+String(value).replaceAll('"','""')+'"'}
-function downloadImportSample(withError=false){
-  const rows=importSampleRows(withError);
-  const content='\ufeff'+rows.map(row=>row.map(csvQuoted).join(',')).join('\r\n')+'\r\n';
-  download(new Blob([content],{type:'text/csv;charset=utf-8'}),withError?'PWP-contoh-gagal.csv':'PWP-template-import.csv');
+function downloadImportSample(withError=false,withImage=false,withBadImage=false){
+ const rows=importSampleRows(withError,withImage,withBadImage);
+ const content='\ufeff'+rows.map(row=>row.map(csvQuoted).join(',')).join('\r\n')+'\r\n';
+ download(new Blob([content],{type:'text/csv;charset=utf-8'}),
+ withError?'PWP-contoh-gagal.csv':withBadImage?'PWP-contoh-foto-rusak.csv':withImage?'PWP-contoh-foto-base64.csv':'PWP-template-import.csv');
 }
 
 function parseImportCsv(input){
@@ -108,10 +109,13 @@ function strictImportNumber(raw,min,positive=false){
 
 function analyzeImport(parsed,existingTransactions){
   const rows=parsed.rows||[],header=rows[0],headerErrors=[];
+  const got=header?.values.map(x=>importText(x).toLowerCase())||[];
+  const activeFields=IMPORT_HEADERS.find(fields=>fields.length===got.length&&fields.every((x,i)=>x===got[i]))||IMPORT_FIELDS;
   if(!header)headerErrors.push('File tidak memiliki header dan baris data.');
   else{
     const got=header.values.map(x=>importText(x).toLowerCase());
-    if(got.length!==IMPORT_FIELDS.length||got.some((x,i)=>x!==IMPORT_FIELDS[i]))headerErrors.push(`Header wajib berurutan: ${IMPORT_FIELDS.join(', ')}`);
+    if(!IMPORT_HEADERS.some(fields=>fields.length===got.length&&fields.every((x,i)=>x===got[i])))
+      headerErrors.push(`Header wajib dimulai: ${IMPORT_FIELDS.join(', ')}; foto opsional: image_filename,image_base64.`);
     headerErrors.push(...header.structuralErrors);
   }
   const existingRefs=new Set(existingTransactions.map(t=>importText(t.ref).toLowerCase()));
@@ -120,9 +124,9 @@ function analyzeImport(parsed,existingTransactions){
   if(rows.length===1)headerErrors.push('File hanya berisi header; tambahkan minimal satu baris data.');
   rows.slice(1).forEach(record=>{
     const errors=[],fail=(field,message)=>errors.push({field,message});
-    const data=Object.fromEntries(IMPORT_FIELDS.map((key,i)=>[key,importText(record.values[i])]));
+    const data=Object.fromEntries(activeFields.map((key,i)=>[key,importText(record.values[i])]));
     record.structuralErrors.forEach(message=>fail('_row',message));
-    if(record.values.length!==IMPORT_FIELDS.length)fail('_row',`Jumlah kolom ${record.values.length}; wajib ${IMPORT_FIELDS.length} kolom.`);
+    if(record.values.length!==activeFields.length)fail('_row',`Jumlah kolom ${record.values.length}; wajib ${activeFields.length} sesuai header.`);
     for(const [key,limit] of [['reference',50],['vendor',80],['lot',60]]){
       if(!data[key])fail(key,`${key} wajib diisi.`);
       else if(data[key].length>limit)fail(key,`${key} maksimal ${limit} karakter.`);
@@ -147,7 +151,9 @@ function analyzeImport(parsed,existingTransactions){
       const message=`Total sortir ${num(sorted)} kg tidak sama dengan net ${num(net)} kg (selisih ${num(sorted-net)} kg).`;
       ['pet_kg','hdpe_kg','residu_kg'].forEach(key=>fail(key,message));
     }
-    results.push({line:record.line,raw:record.values,data,numeric,net,sorted,errors});
+    let image=null;try{image=parseImportImage(data.image_filename,data.image_base64,data.reference)}
+    catch(e){fail('image_base64',e.message)}
+    results.push({line:record.line,raw:record.values,data,numeric,net,sorted,image,errors});
   });
   const invalidCount=results.filter(x=>x.errors.length).length;
   return {header,headerErrors,rows:results,invalidCount,validCount:results.length-invalidCount,canCommit:!headerErrors.length&&!invalidCount&&results.length>0&&results.length<=IMPORT_LIMIT};
@@ -173,20 +179,22 @@ function importPreviewRow(r){
   const netText=r.net===null?'—':num(r.net)+' kg';
   const sortText=r.sorted===null?'—':num(r.sorted)+' kg';
   const badSort=['pet_kg','hdpe_kg','residu_kg','pet_price_idr','hdpe_price_idr'].some(bad);
+  const imageCell='<td class=\"'+(bad('image_base64')?'import-cell-error':'')+'\">'+
+    (bad('image_base64')?'<strong>⚠ Foto salah</strong>':renderImportImage(r.image,true))+'</td>';
   return '<tr class="'+(invalid?'import-row-error':'import-row-valid')+'" aria-label="Baris '+r.line+': '+(invalid?'gagal validasi':'valid')+'"><td><strong>'+r.line+'</strong></td>'+
     importRowCell(r.data.reference,bad('reference'))+importRowCell(r.data.vendor,bad('vendor'))+
     importRowCell(dateLot,bad('date')||bad('lot'))+importRowCell(netText,bad('gross_kg')||bad('tare_kg'))+
-    importRowCell(sortText,badSort)+'<td>'+status+errors+'</td></tr>';
+    importRowCell(sortText,badSort)+imageCell+'<td>'+status+errors+'</td></tr>';
 }
 
   const table=a?'<section class="card import-preview"><div class="card-header"><div><h3>Pratinjau baris & hasil validasi</h3><p>Baris salah berwarna merah. Nomor baris sesuai file asli.</p></div></div>'+
-    '<div class="table-wrap"><table class="tbl import-table"><thead><tr><th>Baris</th><th>Referensi</th><th>Vendor</th><th>Tanggal / lot</th><th>Net</th><th>Sortir</th><th>Hasil</th></tr></thead><tbody>'+
+    '<div class="table-wrap"><table class="tbl import-table"><thead><tr><th>Baris</th><th>Referensi</th><th>Vendor</th><th>Tanggal / lot</th><th>Net</th><th>Sortir</th><th>Bukti gambar</th><th>Hasil</th></tr></thead><tbody>'+
     a.rows.map(importPreviewRow).join('')+'</tbody></table></div></section>':'';
   const actions='<div class="import-actions"><div><h3>Pilih berkas sumber</h3><p>1 baris = 1 transaksi. Maksimal '+IMPORT_LIMIT+' transaksi dan 5 MB. Semua diproses di browser (demo).</p></div>'+
-    '<div class="actions"><button class="btn" onclick="downloadImportSample()">Unduh template CSV</button><button class="btn flat" onclick="downloadImportSample(true)">Contoh berkas salah</button></div></div>';
+    '<div class="actions"><button class="btn" onclick="downloadImportSample()">Unduh template CSV</button><button class="btn flat" onclick="downloadImportSample(true)">Contoh berkas salah</button><button class="btn" onclick="downloadImportSample(false,true)">Contoh CSV + foto Base64</button><button class="btn flat" onclick="downloadImportSample(false,true,true)">Contoh foto rusak</button></div></div>';
   const drop='<label class="import-drop" id="importDrop" for="importFile" ondragover="handleImportDragOver(event)" ondragleave="handleImportDragLeave(event)" ondrop="handleImportDrop(event)">'+
     '<span class="import-upload-symbol">⇧</span><strong>'+(imp.busy?'Membaca berkas...':'Klik untuk memilih berkas atau tarik ke sini')+'</strong>'+
-    '<small>CSV (UTF-8, koma/titik koma) atau XLSX (worksheet pertama)</small>'+
+    '<small>CSV (UTF-8, koma/titik koma) atau XLSX (worksheet pertama). Foto opsional Base64 PNG/JPG/WebP maks. 2 MB.</small>'+
     '<input id="importFile" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="handleImportFile(event)"'+(imp.busy?' disabled':'')+'></label>';
   const filename=imp.filename?'<p class="import-file">File: <strong>'+escapeHtml(imp.filename)+'</strong></p>':'';
   const loadError=imp.loadError?'<div class="import-header-error" role="alert">'+escapeHtml(imp.loadError)+'</div>':'';
@@ -247,7 +255,7 @@ function commitImport(){
         {product:'HDPE',qty:n.hdpe_kg,unitPrice:n.hdpe_price_idr,po:true},
         {product:'Residu',qty:n.residu_kg,unitPrice:0,po:false}
       ],
-      source:'Import '+imp.parsed.format+' (simulasi)',batch,events:[]
+      source:'Import '+imp.parsed.format+' (simulasi)',batch,events:[],evidenceImage:r.image?{...r.image}:null
     });
   });
   // Single commit point: no data/log/sequence change is made before validation.

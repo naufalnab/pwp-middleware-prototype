@@ -41,3 +41,14 @@ html[data-theme="dark"] .import-table .import-row-error:hover td{background:#5b3
 html[data-theme="dark"] .import-table .import-row-error td.import-cell-error{background:#6a3345;color:#fff0f3}
 html[data-theme="dark"] .import-table .import-row-valid td:first-child{border-left-color:#66d49b}
 @media(max-width:760px){.import-panel{padding:15px}.import-actions .actions{width:100%}.import-actions .actions .btn{flex:1}.import-commit .btn{width:100%}.import-table{min-width:850px}}
+/* Preview for validated Base64 evidence. Actual bytes stay in browser memory. */
+.import-image-wrap{display:flex;align-items:center;gap:12px;max-width:420px;min-width:0}
+.import-image-wrap img{width:220px;height:150px;object-fit:contain;border-radius:11px;background:var(--bg);border:1px solid var(--line)}
+.import-image-wrap span{font-weight:750;color:var(--text);overflow-wrap:anywhere;font-size:12px;min-width:0}
+.import-image-wrap small{display:block;color:var(--sub);font-weight:500;font-size:10px;line-height:1.5;margin-top:5px}
+.import-image-wrap.compact{width:180px;gap:7px}
+.import-image-wrap.compact img{width:44px;height:44px;flex-shrink:0;border-radius:7px}
+.import-image-wrap.compact span{font-size:10px}
+.import-image-wrap.compact small{font-size:9px}
+.import-table{min-width:1040px}
+@media(max-width:760px){.import-image-wrap{flex-direction:column;align-items:flex-start}.import-image-wrap.compact{flex-direction:row}}

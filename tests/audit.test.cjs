@@ -5,15 +5,15 @@ const path=require('node:path');
 const vm=require('node:vm');
 function harness(){
  const calls={renders:0,toasts:[],navigation:[]};
- const c={console,Date,Blob,num:n=>String(n),money:n=>String(n),escapeHtml:v=>String(v),
+ const c={console,Date,Blob,atob,num:n=>String(n),money:n=>String(n),escapeHtml:v=>String(v),
    render:()=>calls.renders++,toast:s=>calls.toasts.push(s),goto:s=>calls.navigation.push(s),
    addLog:(t,message)=>{c.state.logs.push({tx:t.id,text:message})},
    makeTx:(id,ref,status,extra)=>({id,ref,status,events:[],...extra}),
    sampleLines:()=>[{product:'PET',qty:6500,unitPrice:5000,po:true}]};
  vm.createContext(c);
- for(const file of ['import.js','audit.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),c,{filename:file});
- const api=vm.runInContext('({parseImportCsv,analyzeImport,importSampleRows,importEmpty,auditInitialState,auditImportEntry,readImportFile,commitImport,auditSeedEntries,auditSyncPO,simulateMasterProductSync,recordAudit})',c);
- c.state={transactions:[],logs:[],seq:5,import:api.importEmpty(),audit:api.auditInitialState(),page:'import',search:'',filter:'all'};
+ for(const file of ['import-image.js','import.js','master.js','audit.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),c,{filename:file});
+ const api=vm.runInContext('({parseImportCsv,analyzeImport,importSampleRows,importEmpty,auditInitialState,auditImportEntry,readImportFile,commitImport,auditSeedEntries,auditSyncPO,simulateOdooMasterUpdate,receiveOdooMasterEvent,masterInitialState,recordAudit})',c);
+ c.state={transactions:[],logs:[],seq:5,import:api.importEmpty(),master:api.masterInitialState(),audit:api.auditInitialState(),page:'import',search:'',filter:'all'};
  return {c,api,calls};
 }
 test('failed import creates one parent entry with invalid and blocked PO detail',()=>{
@@ -50,15 +50,36 @@ test('invalid upload logs a failed attempt without inserting any valid rows',asy
  assert.equal(c.state.audit.entries[0].outcome,'failed');
  assert.equal(c.state.transactions.length,0);
 });
-test('master-product sync records success and failure counts at parent level',()=>{
+test('Odoo product event updates only the read-only mirror and records all results',()=>{
  const {c,api}=harness();
  const count=c.state.audit.entries.length;
- api.simulateMasterProductSync();
+ api.simulateOdooMasterUpdate('product');
  assert.equal(c.state.audit.entries.length,count+1);
- assert.equal(c.state.audit.entries[0].success,4);
+ assert.equal(c.state.audit.entries[0].source,'Odoo 16 → Middleware (demo)');
+ assert.equal(c.state.audit.entries[0].success,2);
  assert.equal(c.state.audit.entries[0].failed,1);
- assert.equal(c.state.audit.entries[0].items.length,5);
+ assert.equal(c.state.audit.entries[0].items.length,3);
+ assert.equal(c.state.master.products.length,5);
+ assert.equal(c.state.master.products.find(x=>x.code==='PET').name,'PET Clear — updated in Odoo');
  assert.ok(c.state.audit.entries[0].items.at(-1).errors.length);
+});
+test('Odoo warehouse event also updates only the mirror and logs failed source records',()=>{
+ const {c,api}=harness();
+ api.simulateOdooMasterUpdate('warehouse');
+ assert.equal(c.state.audit.entries[0].kind,'warehouse_sync');
+ assert.equal(c.state.audit.entries[0].source,'Odoo 16 → Middleware (demo)');
+ assert.equal(c.state.audit.entries[0].success,2);
+ assert.equal(c.state.audit.entries[0].failed,1);
+ assert.equal(c.state.master.warehouses.length,3);
+ assert.equal(c.state.master.warehouses.find(x=>x.id===12).name,'PWP Secondary — updated in Odoo');
+});
+test('Master events cannot be submitted as middleware user writes',()=>{
+ const {c,api}=harness();
+ const prior=JSON.stringify(c.state.master);
+ const count=c.state.audit.entries.length;
+ assert.throws(()=>api.receiveOdooMasterEvent('product',[{id:500,code:'FAKE',name:'Fake',uom:'kg'}],{source:'Middleware'}),/hanya boleh diterima dari Odoo/);
+ assert.equal(JSON.stringify(c.state.master),prior);
+ assert.equal(c.state.audit.entries.length,count);
 });
 test('each PO sync attempt adds an auditable success/failure operation',()=>{
  const {c,api}=harness();
@@ -71,4 +92,28 @@ test('each PO sync attempt adds an auditable success/failure operation',()=>{
  assert.equal(c.state.audit.entries[0].success,1);
  assert.equal(c.state.audit.entries[1].failed,1);
  assert.equal(c.state.audit.entries[0].items[0].po,'PO-DEMO-0043');
+});
+test('successful photo CSV preserves image in transaction and drill-down audit without copying it into audit CSV',()=>{
+ const {c,api}=harness();
+ const csv=api.importSampleRows(false,true).map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n');
+ const parsed=api.parseImportCsv(csv),analysis=api.analyzeImport(parsed,[]);
+ assert.equal(analysis.canCommit,true);
+ c.state.import={...api.importEmpty(),filename:'foto.csv',parsed,analysis};
+ api.commitImport();
+ const tx=c.state.transactions.find(t=>t.ref==='VABC-IMP-001');
+ const audit=c.state.audit.entries[0];
+ assert.equal(tx.evidenceImage.mimeType,'image/png');
+ assert.equal(audit.kind,'po_import');
+ assert.equal(audit.items[0].evidenceImage.base64,tx.evidenceImage.base64);
+ assert.equal(audit.items[1].evidenceImage,null);
+});
+test('corrupt image is logged as a failed batch and no image bytes are stored in audit',async()=>{
+ const {c,api}=harness();
+ const csv=api.importSampleRows(false,true,true).map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n');
+ await api.readImportFile({name:'bad-photo.csv',size:csv.length,text:async()=>csv});
+ assert.equal(c.state.audit.entries[0].outcome,'failed');
+ assert.equal(c.state.audit.entries[0].failed,1);
+ assert.equal(c.state.audit.entries[0].blocked,1);
+ assert.equal(c.state.audit.entries[0].items[0].evidenceImage,null);
+ assert.equal(c.state.transactions.length,0);
 });
