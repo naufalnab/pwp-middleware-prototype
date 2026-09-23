@@ -84,6 +84,7 @@
     @media(max-width:760px){.theme-toggle{padding:8px 10px;min-width:39px}.theme-toggle .theme-label{display:none}}
     @media(prefers-reduced-motion:reduce){.theme-toggle{transition:none}}
   </style>
+  <link rel="stylesheet" href="import.css">
 </head>
 <body>
 <svg style="display:none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -111,6 +112,7 @@
     <nav class="nav" id="nav">
       <button class="nav-btn active" data-page="dashboard"><svg><use href="#i-dashboard"/></svg>Overview</button>
       <button class="nav-btn" data-page="transactions"><svg><use href="#i-truck"/></svg>Transaksi Timbang <span class="count" id="navCount">4</span></button>
+      <button class="nav-btn" data-page="import"><svg><use href="#i-file"/></svg>Import CSV / Excel</button>
       <button class="nav-btn" data-page="validation"><svg><use href="#i-shield"/></svg>Validasi & Approval</button>
       <button class="nav-btn" data-page="integration"><svg><use href="#i-sync"/></svg>Integrasi Odoo</button>
       <button class="nav-btn" data-page="audit"><svg><use href="#i-logs"/></svg>Audit Trail</button>
@@ -126,6 +128,8 @@
 </div>
 <div class="dialog-wrap" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onclick="if(event.target===this)closeModal()"><div class="dialog"><div class="dialog-top"><div><div class="eyebrow">VENDOR ABC · SIMULATOR</div><h2 id="modal-title">Buat transaksi penimbangan</h2></div><button class="btn small" onclick="closeModal()" aria-label="Tutup">✕</button></div><div class="dialog-body" id="modalBody"></div><div class="modal-footer"><button class="btn" onclick="closeModal()">Batal</button><div class="actions"><button class="btn" onclick="resetSimulatorForm()">Reset isian</button><button class="btn primary" onclick="receiveTransaction()"><svg><use href="#i-arrow"/></svg> Kirim ke Middleware</button></div></div></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="vendor/exceljs.min.js"></script>
+<script src="import.js"></script>
 <script>
 'use strict';
 const money = n => new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n||0);
@@ -143,7 +147,7 @@ const seedTx=[
   makeTx('TRX-004','VABC-260923-004','failed',{lot:'LOT-260923-D',gross:10600,tare:5200,lines:[{product:'PET',qty:3200,unitPrice:5000,po:true},{product:'HDPE',qty:1900,unitPrice:2500,po:true},{product:'Residu',qty:300,unitPrice:0,po:false}],batch:'BATCH-260923-04',vendorApproved:true,pwpApproved:true,simFail:true,events:[{at:'13:41',by:'Middleware',text:'Validasi dan persetujuan berhasil'},{at:'13:42',by:'Odoo Simulator',text:'Respons 503 (simulasi) — aman untuk retry'}]})
 ];
 const pristineSeed=JSON.parse(JSON.stringify(seedTx));
-let state={page:'dashboard',selected:'TRX-001',transactions:seedTx,seq:5,search:'',filter:'all',scenario:'normal',logs:seedTx.flatMap(t=>t.events.map(e=>({tx:t.id,ref:t.ref,...e}))).reverse(),modal:false};
+let state={page:'dashboard',selected:'TRX-001',transactions:seedTx,seq:5,search:'',filter:'all',scenario:'normal',import:importEmpty(),logs:seedTx.flatMap(t=>t.events.map(e=>({tx:t.id,ref:t.ref,...e}))).reverse(),modal:false};
 function tx() {return state.transactions.find(t=>t.id===state.selected)||state.transactions[0]}
 function time(){return new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}
 function totalQty(t){return t.lines.reduce((s,l)=>s+Number(l.qty||0),0)}
@@ -159,10 +163,11 @@ function toggleMenu(on){document.getElementById('sidebar').classList.toggle('ope
 function goto(page){state.page=page;document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));toggleMenu(false);render();window.scrollTo({top:0,behavior:'smooth'})}
 document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>goto(b.dataset.page)));
 function heading(k,title,desc,buttons=''){return `<div class="page-heading"><div><div class="eyebrow">${k}</div><h1>${title}</h1><p>${desc}</p></div><div class="actions">${buttons}</div></div>`}
+const btnImport=`<button class="btn" onclick="goto('import')">${icon('file')} Import CSV / Excel</button>`;
 const btnSimulator=`<button class="btn primary" onclick="openSimulator()">${icon('plus')} Simulasi transaksi</button>`;
-function render(){const names={dashboard:'Overview',transactions:'Transaksi Timbang',validation:'Validasi & Approval',integration:'Integrasi Odoo',audit:'Audit Trail',configuration:'Data Mapping'};document.getElementById('breadcrumb').textContent=names[state.page];document.getElementById('navCount').textContent=state.transactions.length;document.getElementById('page').innerHTML=({dashboard:pageDashboard,transactions:pageTransactions,validation:pageValidation,integration:pageIntegration,audit:pageAudit,configuration:pageConfig})[state.page]();}
+function render(){const names={dashboard:'Overview',transactions:'Transaksi Timbang',import:'Import Data',validation:'Validasi & Approval',integration:'Integrasi Odoo',audit:'Audit Trail',configuration:'Data Mapping'};document.getElementById('breadcrumb').textContent=names[state.page];document.getElementById('navCount').textContent=state.transactions.length;document.getElementById('page').innerHTML=({dashboard:pageDashboard,transactions:pageTransactions,import:pageImport,validation:pageValidation,integration:pageIntegration,audit:pageAudit,configuration:pageConfig})[state.page]();}
 function pageDashboard(){const ts=state.transactions;let synced=ts.filter(t=>t.status==='synced').length,pending=ts.filter(t=>['pending','approved','received'].includes(t.status)).length,problem=ts.filter(t=>['blocked','failed'].includes(t.status)).length;return `
-${heading('PROJECT PWP / CONTROL CENTER','Semua transaksi, satu kendali.','Pantau alur penimbangan, sortir, validasi dan integrasi Odoo 16 dari satu dashboard. Semua data di halaman ini merupakan simulasi.',`<button class="btn" onclick="resetDemo()">↻ Reset demo</button>${btnSimulator}`)}
+${heading('PROJECT PWP / CONTROL CENTER','Semua transaksi, satu kendali.','Pantau alur penimbangan, sortir, validasi dan integrasi Odoo 16 dari satu dashboard. Semua data di halaman ini merupakan simulasi.',`<button class="btn" onclick="resetDemo()">↻ Reset demo</button>${btnImport}${btnSimulator}`)}
 <div class="grid kpis">
  <article class="card kpi"><span class="kpi-lbl">Total transaksi</span><span class="icon-box">${icon('stack')}</span><div class="kpi-num num">${num(ts.length)}</div><div class="kpi-note">Dari simulator Vendor ABC</div></article>
  <article class="card kpi"><span class="kpi-lbl">Berhasil sinkron</span><span class="icon-box greenbox">${icon('check')}</span><div class="kpi-num num">${synced}</div><div class="kpi-note">PO demo tercatat</div></article>
@@ -180,7 +185,7 @@ function filters(){return `<div class="filters"><div class="search">${icon('sear
 function filtered(){return state.transactions.filter(t=>(state.filter==='all'||t.status===state.filter)&&[t.id,t.ref,t.vendor,t.lot].join(' ').toLowerCase().includes(state.search.toLowerCase()))}
 function setSearch(s){state.search=s;const list=document.getElementById('listArea');if(list)list.innerHTML=renderTransactionsTable(filtered())}
 function setFilter(s){state.filter=s;const list=document.getElementById('listArea');if(list)list.innerHTML=renderTransactionsTable(filtered())}
-function pageTransactions(){return `${heading('SOURCE TRANSACTIONS','Jembatan timbang & hasil sortir','Kelola transaksi masuk dari kedua sistem Vendor ABC dan lihat hasil penghitungan berat serta struktur lot.',btnSimulator)}${filters()}<section class="card" id="listArea">${renderTransactionsTable(filtered())}</section><p class="footnote">Asumsi demo: kedua sumber dikonsolidasikan berdasarkan satu referensi transaksi sebelum masuk alur persetujuan. Mekanisme pencocokan aktual akan ditentukan bersama Vendor ABC.</p>`}
+function pageTransactions(){return `${heading('SOURCE TRANSACTIONS','Jembatan timbang & hasil sortir','Kelola transaksi masuk dari kedua sistem Vendor ABC dan lihat hasil penghitungan berat serta struktur lot.',btnImport+btnSimulator)}${filters()}<section class="card" id="listArea">${renderTransactionsTable(filtered())}</section><p class="footnote">Asumsi demo: kedua sumber dikonsolidasikan berdasarkan satu referensi transaksi sebelum masuk alur persetujuan. Mekanisme pencocokan aktual akan ditentukan bersama Vendor ABC.</p>`}
 function validateChecks(t){let checks=[];let dup=state.transactions.some(x=>x.id!==t.id&&x.ref===t.ref);checks.push({ok:!!t.ref&&!dup,title:'Referensi unik',msg:dup?'Referensi sudah pernah diterima':'Referensi eksternal belum dipakai'});checks.push({ok:!!t.vendor&&!!t.date&&!!t.lot,title:'Identitas transaksi',msg:t.vendor&&t.date&&t.lot?'Vendor, tanggal, dan lot tersedia':'Vendor, tanggal, atau lot belum lengkap'});checks.push({ok:net(t)>0&&t.gross>t.tare,title:'Berat jembatan timbang',msg:`Gross ${num(t.gross)} − Tare ${num(t.tare)} = Net ${num(net(t))} kg`});checks.push({ok:totalQty(t)===net(t),title:'Rekonsiliasi berat (aturan demo)',msg:delta(t)===0?'Total sortir sesuai berat bersih':`Selisih sortir ${num(delta(t))} kg terhadap net ${num(net(t))} kg`});checks.push({ok:t.lines.some(l=>l.po)&&t.lines.filter(l=>l.po).every(l=>l.qty>0&&l.unitPrice>0),title:'Mapping produk & harga',msg:'Produk PO memiliki kuantitas dan harga satuan'});return checks}
 function selectValidation(id){state.selected=id;render()}
 function openTx(id){state.selected=id;goto('validation')}
@@ -236,7 +241,7 @@ function receiveTransaction(){let ids=['fref','fvendor','fdate','flot'];let vals
 async function exportPayload(){const data=JSON.stringify(payload(tx()),null,2);try{await navigator.clipboard.writeText(data);toast('JSON payload disalin ke clipboard.')}catch(e){const blob=new Blob([data],{type:'application/json'});download(blob,`payload-${tx().id}.json`);toast('Clipboard tidak tersedia; JSON diunduh sebagai file.')}}
 function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
 function exportLogs(){let rows=[['Waktu','Transaksi','Referensi','Pelaku','Peristiwa'],...state.logs.map(e=>[e.at,e.tx,e.ref,e.by,e.text])];const csv='\ufeff'+rows.map(r=>r.map(s=>'"'+String(s).replaceAll('"','""')+'"').join(',')).join('\r\n');download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'PWP-audit-trail-DEMO.csv');toast('Audit trail demo diekspor sebagai CSV.')}
-function resetDemo(){if(!confirm('Reset seluruh transaksi simulasi ke keadaan awal?'))return;state.transactions=JSON.parse(JSON.stringify(pristineSeed));state.seq=5;state.selected='TRX-001';state.logs=state.transactions.flatMap(t=>t.events.map(e=>({tx:t.id,ref:t.ref,...e}))).reverse();state.search='';state.filter='all';render();toast('Demo kembali ke data awal.')}
+function resetDemo(){if(!confirm('Reset seluruh transaksi simulasi ke keadaan awal?'))return;state.transactions=JSON.parse(JSON.stringify(pristineSeed));state.seq=5;state.selected='TRX-001';state.logs=state.transactions.flatMap(t=>t.events.map(e=>({tx:t.id,ref:t.ref,...e}))).reverse();state.search='';state.filter='all';state.import=importEmpty();render();toast('Demo kembali ke data awal.')}
 
 function refreshThemeControl(){
   const dark=document.documentElement.getAttribute('data-theme')==='dark';

@@ -11,6 +11,24 @@ Prototype **frontend statis** untuk presentasi konsep integrasi penimbangan Vend
 4. Skenario **Odoo unavailable**: klik **Retry** setelah pengiriman gagal; hasil simulasi akan pulih.
 5. Periksa **Audit Trail**, ekspor CSV, atau lihat **Data Mapping** dan daftar pertanyaan workshop.
 
+## Import batch CSV / Excel (semua atau tidak sama sekali)
+
+Buka menu **Import CSV / Excel**, lalu pilih file `.csv` (UTF-8, pemisah koma atau titik koma) atau `.xlsx` (worksheet pertama). Maksimal **1.000 baris data / 5 MB**. Template valid maupun contoh file salah tersedia melalui tombol unduh di halaman Import dan di folder `examples/`.
+
+Header wajib urut persis seperti berikut (satu baris = satu transaksi lengkap):
+
+```csv
+reference,vendor,date,lot,gross_kg,tare_kg,pet_kg,pet_price_idr,hdpe_kg,hdpe_price_idr,residu_kg
+```
+
+`date` memakai `YYYY-MM-DD`, bilangan harus memakai titik untuk desimal, dan harga memakai IDR. PET dan HDPE merupakan mapping contoh demo (bukan skema final dari Vendor ABC).
+
+**Aturan all-or-nothing:** file hanya dapat diimpor jika setiap baris valid: header dan jumlah kolom benar, referensi unik baik di file maupun terhadap transaksi yang sudah ada, identitas/tanggal lengkap dan valid, semua angka sesuai batas, Gross > Tare, serta total sortir tepat sama dengan Net (aturan ilustrasi). Jika satu saja gagal, **tidak ada satu pun transaksi ditambahkan**; baris dan sel bermasalah muncul **merah**, disertai nomor baris fisik dan alasan kesalahan. Header bermasalah juga ditandai merah. Perbaiki file sumber lalu unggah ulang. Jika semuanya valid, seluruh transaksi masuk sekaligus dalam satu batch dan mendapat audit log masing-masing.
+
+Excel dibaca **lokal di browser** memakai bundel ExcelJS 4.4.0 yang disertakan di `vendor/` (lisensi MIT); tidak memakai CDN. Formula Excel tidak diterima dalam berkas impor, gunakan nilai biasa. Bila berkas memiliki baris kosong di tengah, baris tersebut gagal validasi; baris kosong di akhir diabaikan.
+
+Jalankan tes parser/validasi dengan `node --test tests/import.test.cjs`. Fitur ini **hanya simulasi frontend**: transaksi hilang saat reload, belum ada penyimpanan atau rollback database. Implementasi produksi harus memakai transaksi database dan pengamanan server-side untuk menjamin sifat atomik tersebut.
+
 ## Hosting di Vercel
 
 Deploy direktori ini sebagai proyek **static / Other**, tanpa build command dan tanpa environment variables. Alternatif: unggah direktori ke GitHub lalu impor ke Vercel. Root entry adalah `index.html`.

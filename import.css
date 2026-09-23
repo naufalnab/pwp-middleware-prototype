@@ -1,0 +1,43 @@
+:root{--import-red:#bc3046;--import-red-bg:#fff0f3;--import-red-edge:#ed9dad;--import-green-bg:#eef9f2;--import-green-edge:#b5dec6}
+.import-panel{padding:24px;margin-bottom:20px}
+.import-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;margin-bottom:20px}
+.import-actions h3{font-size:17px;margin:0 0 5px;color:var(--text)}
+.import-actions p{font-size:12px;line-height:1.6;color:var(--sub);margin:0}
+.import-drop{border:2px dashed #9eb8e0;background:var(--bg);border-radius:14px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:7px;min-height:158px;padding:20px;cursor:pointer;text-align:center;transition:background .18s,border-color .18s}
+.import-drop:hover,.import-drop.drag-over{background:var(--blue2);border-color:var(--blue)}
+.import-drop:focus-within{outline:3px solid var(--blue);outline-offset:3px}
+.import-drop input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.import-drop strong{font-size:14px;color:var(--text)}
+.import-drop small{font-size:11px;color:var(--sub)}
+.import-upload-symbol{font-size:29px;font-weight:800;color:var(--blue);line-height:1}
+.import-file{font-size:12px;color:var(--sub);margin:12px 0 0}
+.import-file strong{color:var(--text)}
+.import-summary{display:flex;flex-direction:column;gap:5px;margin-top:20px;padding:18px 19px;border:1px solid var(--import-green-edge);background:var(--import-green-bg);border-radius:12px;color:#175b36}
+.import-summary strong{font-size:14px}
+.import-summary span{font-size:12px;font-weight:750}
+.import-summary small{font-size:11px;line-height:1.6}
+.import-summary.import-blocked,.import-header-error{background:var(--import-red-bg);border-color:var(--import-red-edge);color:#92273b}
+.import-header-error{border:1px solid var(--import-red-edge);padding:12px 16px;border-radius:10px;margin-top:13px;font-size:12px;line-height:1.7}
+.import-header-error strong{display:block;font-size:13px}
+.import-commit{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:13px;border-top:1px solid var(--line);padding-top:18px;margin-top:20px}
+.import-commit span{font-size:12px;color:var(--sub)}
+.import-preview{margin-bottom:10px}
+.import-table{min-width:900px}
+.import-table td{vertical-align:top;line-height:1.5}
+.import-table .import-row-error td{background:var(--import-red-bg);border-top:1px solid var(--import-red-edge);border-bottom:1px solid var(--import-red-edge);color:#8d263b}
+.import-table .import-row-error td:first-child{border-left:4px solid var(--import-red);font-weight:800}
+.import-table .import-row-error:hover td{background:#ffe0e7}
+.import-table .import-row-error td.import-cell-error{background:#ffdce4;box-shadow:inset 0 -2px 0 var(--import-red);font-weight:800}
+.import-table .import-row-valid td:first-child{border-left:4px solid #43a46a}
+.import-errors{margin:7px 0 0;padding-left:16px;min-width:160px;font-size:11px;line-height:1.6}
+.import-errors li{margin:0 0 5px}
+html[data-theme="dark"]{--import-red:#ff8fa4;--import-red-bg:#45232f;--import-red-edge:#a94c64;--import-green-bg:#173a30;--import-green-edge:#376d58}
+html[data-theme="dark"] .import-summary{color:#b1f0d1}
+html[data-theme="dark"] .import-summary.import-blocked,html[data-theme="dark"] .import-header-error{color:#ffd5dd}
+html[data-theme="dark"] .import-drop{border-color:#49668c}
+html[data-theme="dark"] .import-drop:hover,html[data-theme="dark"] .import-drop.drag-over{border-color:#99bdff}
+html[data-theme="dark"] .import-table .import-row-error td{background:var(--import-red-bg);color:#ffe4e9;border-color:var(--import-red-edge)}
+html[data-theme="dark"] .import-table .import-row-error:hover td{background:#5b3040}
+html[data-theme="dark"] .import-table .import-row-error td.import-cell-error{background:#6a3345;color:#fff0f3}
+html[data-theme="dark"] .import-table .import-row-valid td:first-child{border-left-color:#66d49b}
+@media(max-width:760px){.import-panel{padding:15px}.import-actions .actions{width:100%}.import-actions .actions .btn{flex:1}.import-commit .btn{width:100%}.import-table{min-width:850px}}
