@@ -9,7 +9,7 @@ Prototype **frontend statis** untuk presentasi konsep integrasi penimbangan Vend
 2. Klik **Simulasi transaksi** lalu pilih salah satu skenario: Normal, Duplikat, Selisih Berat, atau Odoo Unavailable.
 3. Klik **Kirim ke Middleware** → **Jalankan validasi** → konfirmasi **Vendor ABC** dan **PWP** → **Integrasi Odoo** → **Kirim ke Odoo (demo)**.
 4. Skenario **Odoo unavailable**: klik **Retry** setelah pengiriman gagal; hasil simulasi akan pulih.
-5. Periksa **Audit Trail**, ekspor CSV, atau lihat **Data Mapping** dan daftar pertanyaan workshop.
+5. Periksa **Audit Log**, ekspor CSV, atau lihat **Data Mapping** dan daftar pertanyaan workshop.
 
 ## Import batch CSV / Excel (semua atau tidak sama sekali)
 
@@ -23,11 +23,22 @@ reference,vendor,date,lot,gross_kg,tare_kg,pet_kg,pet_price_idr,hdpe_kg,hdpe_pri
 
 `date` memakai `YYYY-MM-DD`, bilangan harus memakai titik untuk desimal, dan harga memakai IDR. PET dan HDPE merupakan mapping contoh demo (bukan skema final dari Vendor ABC).
 
-**Aturan all-or-nothing:** file hanya dapat diimpor jika setiap baris valid: header dan jumlah kolom benar, referensi unik baik di file maupun terhadap transaksi yang sudah ada, identitas/tanggal lengkap dan valid, semua angka sesuai batas, Gross > Tare, serta total sortir tepat sama dengan Net (aturan ilustrasi). Jika satu saja gagal, **tidak ada satu pun transaksi ditambahkan**; baris dan sel bermasalah muncul **merah**, disertai nomor baris fisik dan alasan kesalahan. Header bermasalah juga ditandai merah. Perbaiki file sumber lalu unggah ulang. Jika semuanya valid, seluruh transaksi masuk sekaligus dalam satu batch dan mendapat audit log masing-masing.
+**Aturan all-or-nothing:** file hanya dapat diimpor jika setiap baris valid: header dan jumlah kolom benar, referensi unik baik di file maupun terhadap transaksi yang sudah ada, identitas/tanggal lengkap dan valid, semua angka sesuai batas, Gross > Tare, serta total sortir tepat sama dengan Net (aturan ilustrasi). Jika satu saja gagal, **tidak ada satu pun transaksi ditambahkan**; baris dan sel bermasalah muncul **merah**, disertai nomor baris fisik dan alasan kesalahan. Header bermasalah juga ditandai merah. Perbaiki file sumber lalu unggah ulang. Jika semuanya valid, seluruh transaksi masuk sekaligus dalam satu batch dan menghasilkan **satu entri Audit Log** dengan daftar semua transaksi di dalamnya.
 
 Excel dibaca **lokal di browser** memakai bundel ExcelJS 4.4.0 yang disertakan di `vendor/` (lisensi MIT); tidak memakai CDN. Formula Excel tidak diterima dalam berkas impor, gunakan nilai biasa. Bila berkas memiliki baris kosong di tengah, baris tersebut gagal validasi; baris kosong di akhir diabaikan.
 
-Jalankan tes parser/validasi dengan `node --test tests/import.test.cjs`. Fitur ini **hanya simulasi frontend**: transaksi hilang saat reload, belum ada penyimpanan atau rollback database. Implementasi produksi harus memakai transaksi database dan pengamanan server-side untuk menjamin sifat atomik tersebut.
+Jalankan tes parser/validasi dan pencatatan Audit Log dengan `node --test tests/*.test.cjs`. Fitur ini **hanya simulasi frontend**: transaksi hilang saat reload, belum ada penyimpanan atau rollback database. Implementasi produksi harus memakai transaksi database dan pengamanan server-side untuk menjamin sifat atomik tersebut.
+
+## Audit Log: detail batch → item
+
+Menu **Audit Log** mencatat **satu entri per operasi** berikut (semuanya simulasi frontend):
+
+- **Impor CSV/Excel berhasil:** satu log berstatus Berhasil dengan total jumlah PO/transaksi yang masuk. Klik **Lihat detail** untuk melihat seluruh daftar PO dalam batch; klik **Detail PO** untuk melihat vendor, lot, tanggal, gross/tare/net, material, harga, dan status PO Odoo (jika sudah dibuat dalam simulator).
+- **Impor gagal:** satu log berstatus Gagal; menampilkan jumlah baris salah serta baris valid yang **tertahan**, pesan error, dan daftar baris yang bisa diperiksa satu per satu. Tidak ada transaksi yang ditambahkan ke middleware, termasuk baris yang valid.
+- **Integrasi Master Product:** contoh awal memperlihatkan 5 produk (4 berhasil, 1 gagal), dengan tombol **Simulasikan Master Product** pada halaman Integrasi Odoo untuk membuat operasi baru. Klik log untuk memeriksa tiap produk dan penyebab kegagalan.
+- **Integrasi PO:** setiap percobaan kirim ke simulator Odoo dicatat sebagai operasi berhasil/gagal. Detailnya terhubung dengan transaksi terkait, sementara **timeline transaksi** tetap memuat kejadian individual.
+
+Ekspor CSV Audit Log menghasilkan **satu baris per operasi**, berisi waktu, jenis, sumber, status, jumlah total, berhasil, gagal, dan tertahan. Data dan audit di prototype tetap hanya berada di memori browser: **refresh akan menghapus aktivitas baru**, sedangkan entri contoh awal dimuat ulang. Sistem produksi nantinya memerlukan audit terpusat persisten, izin pengguna, dan transaksi database atomik.
 
 ## Hosting di Vercel
 

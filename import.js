@@ -222,8 +222,10 @@ async function readImportFile(file){
     const parsed=extension==='csv'?parseImportCsv(await file.text()):await parseImportExcel(file);
     const analysis=analyzeImport(parsed,state.transactions);
     state.import={...importEmpty(),filename:file.name,parsed,analysis};
+    if(!analysis.canCommit)recordAudit(auditImportEntry(file.name,analysis,false));
   }catch(error){
     state.import={...importEmpty(),filename:file.name,loadError:error.message||'Gagal membaca berkas.'};
+    recordAudit(auditFileError(file.name,state.import.loadError));
   }
   if(state.page==='import')render();
 }
@@ -234,7 +236,7 @@ function commitImport(){
   // Re-check against live state immediately before committing (no partial writes).
   const checked=analyzeImport(imp.parsed,state.transactions);
   imp.analysis=checked;
-  if(!checked.canCommit){render();toast('Impor dibatalkan karena ada baris yang tidak valid.');return}
+  if(!checked.canCommit){recordAudit(auditImportEntry(imp.filename,checked,false));render();toast('Impor dibatalkan karena ada baris yang tidak valid.');return}
   const batch='BATCH-IMP-'+Date.now();
   const inserted=checked.rows.map((r,index)=>{
     const n=r.numeric;
@@ -251,6 +253,8 @@ function commitImport(){
   // Single commit point: no data/log/sequence change is made before validation.
   state.transactions=[...inserted,...state.transactions];
   state.seq+=inserted.length;
+  // Exactly one top-level audit log entry for the entire successful PO batch.
+  recordAudit(auditImportEntry(imp.filename,checked,true,inserted.map(t=>t.id)));
   inserted.forEach((t,i)=>addLog(t,'Diimpor bersama dalam batch '+batch+' dari baris '+checked.rows[i].line+' ('+imp.filename+'; simulasi)','Operator import'));
   state.selected=inserted[0].id;
   state.import=importEmpty();
